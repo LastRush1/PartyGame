@@ -126,7 +126,12 @@
         setNetError('Этот браузер не поддерживает WebRTC. Откройте в Chrome, Edge, Firefox или Safari.');
       } else if (['network', 'server-error', 'socket-error', 'socket-closed'].includes(err.type)) {
         setNetError('Проблема с сетью (' + err.type + '), пробуем ещё раз…');
-        setTimeout(() => { if (peer && !peer.destroyed && peer.disconnected) peer.reconnect(); }, 3000);
+        if (S.phase === 'connecting') {
+          peer.destroy();
+          setTimeout(createRoom, 3000);
+        } else {
+          setTimeout(() => { if (peer && !peer.destroyed && peer.disconnected) peer.reconnect(); }, 3000);
+        }
       }
     });
   }
@@ -205,13 +210,13 @@
     };
     const name = clean(msg.name, 14);
     if (!name) return fail('Введите имя.');
-    if (S.phase !== 'lobby') return fail('Игра уже идёт — дождитесь следующей.');
+    if (S.phase !== 'lobby' && S.phase !== 'end') return fail('Игра уже идёт — дождитесь следующей.');
     if (S.players.length >= MAX_PLAYERS) return fail('Комната заполнена (максимум ' + MAX_PLAYERS + ').');
     if (S.players.some((q) => q.name.toLowerCase() === name.toLowerCase())) return fail('Это имя уже занято.');
 
     const used = S.players.map((q) => q.slot);
     const slot = [...Array(MAX_PLAYERS).keys()].find((i) => !used.includes(i));
-    p = { id: 'p' + nextId++, token, name, slot, avatar: AVATARS[slot], color: COLORS[slot], score: 0, conn, connected: true };
+    p = { id: 'p' + nextId++, token, name, slot, avatar: AVATARS[slot], color: COLORS[slot], score: 0, conn, connected: true, fresh: S.phase === 'end' };
     conn.pid = p.id;
     S.players.push(p);
     sfx('join');
@@ -446,7 +451,10 @@
   function backToLobby() {
     clearTimeout(timer);
     S.players = S.players.filter((p) => p.connected);
-    S.players.forEach((p) => (p.score = 0));
+    S.players.forEach((p) => {
+      p.score = 0;
+      p.fresh = false;
+    });
     S.phase = 'lobby';
     S.round = 0;
     S.deadline = 0;
@@ -457,6 +465,7 @@
 
   // Досрочно завершаем фазу, если все, кто в сети, уже сходили
   function checkProgress() {
+    if (online().length < 2) return;
     if (S.phase === 'answer') {
       const on = online();
       if (on.length && on.every((p) => pendingFor(p).length === 0)) startVoting();
@@ -521,7 +530,8 @@
       case 'final-reveal':
         return wait('Итоги финала… 🥁', 'Смотрите на экран!');
       case 'end': {
-        const sorted = [...S.players].sort((a, b) => b.score - a.score);
+        if (p.fresh) return { screen: 'end', key: 'end-fresh:' + isVip, fresh: true, vip: isVip };
+        const sorted = S.players.filter((q) => !q.fresh).sort((a, b) => b.score - a.score);
         const place = sorted.findIndex((q) => q.score === p.score) + 1;
         return { screen: 'end', key: 'end:' + isVip, place, score: p.score, vip: isVip };
       }

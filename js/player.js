@@ -46,7 +46,23 @@
     if (p) { try { p.destroy(); } catch (e) { /* ignore */ } }
   }
 
-  function connect() {
+  const MAX_TRIES = 5;
+  const NET_HELP = 'Проверьте интернет. Если вы на мобильном интернете или с VPN — попробуйте Wi-Fi или выключите VPN.';
+
+  // Первое подключение: при сбое пробуем ещё несколько раз, а не сдаёмся сразу
+  function retryOrFail(attempt, text) {
+    if (joined) return;
+    if (attempt < MAX_TRIES) {
+      cleanup();
+      showConnecting(`Не получилось, пробуем ещё раз… (попытка ${attempt + 1} из ${MAX_TRIES})`);
+      clearTimeout(joinTimeout);
+      joinTimeout = setTimeout(() => connect(attempt + 1), 1500 * attempt);
+    } else {
+      fail(text);
+    }
+  }
+
+  function connect(attempt = 1) {
     lastAttempt = Date.now();
     cleanup();
     if (joined) setNet('Переподключаемся…');
@@ -78,14 +94,14 @@
         setNet('Связь потеряна, переподключаемся…');
         return;
       }
-      if (err.type === 'peer-unavailable') fail(`Комната ${code} не найдена. Проверьте код — или ведущий закрыл игру.`);
-      else if (err.type === 'browser-incompatible') fail('Браузер не поддерживает WebRTC.');
-      else fail('Не удалось подключиться (' + err.type + '). Попробуйте ещё раз.');
+      if (err.type === 'browser-incompatible') fail('Браузер не поддерживает WebRTC. Откройте сайт в Chrome или Safari.');
+      else if (err.type === 'peer-unavailable') retryOrFail(Math.max(attempt, MAX_TRIES - 1), `Комната ${code} не найдена. Проверьте код — или ведущий закрыл игру.`);
+      else retryOrFail(attempt, 'Не удалось связаться с сервером комнат (' + err.type + '). ' + NET_HELP);
     });
     if (!joined) {
       clearTimeout(joinTimeout);
       joinTimeout = setTimeout(() => {
-        if (!joined && pr === peer) fail('Не удалось подключиться к комнате. Попробуйте ещё раз.');
+        if (!joined && pr === peer) retryOrFail(attempt, 'Не удалось подключиться к комнате. ' + NET_HELP);
       }, 15000);
     }
   }
@@ -203,9 +219,9 @@
     (prefill.length === 4 ? $('#nameIn') : codeIn).focus();
   }
 
-  function showConnecting() {
+  function showConnecting(note) {
     viewKey = '';
-    app.innerHTML = `<div class="p-screen center"><div class="spinner"></div><p class="muted">Подключаемся к комнате ${esc(code)}…</p></div>`;
+    app.innerHTML = `<div class="p-screen center"><div class="spinner"></div><p class="muted">Подключаемся к комнате ${esc(code)}…</p>${note ? `<p class="muted">${esc(note)}</p>` : ''}</div>`;
   }
 
   function onView(v) {
@@ -268,6 +284,15 @@
         break;
 
       case 'end':
+        if (v.fresh) {
+          body = `<div class="p-screen center">
+            <div class="av huge pop" style="--c:${me.color}">${me.avatar}</div>
+            <h2>Вы в комнате!</h2>
+            <p class="muted">Сыграете в следующей игре — ждём, пока VIP её запустит.</p>
+            ${v.vip ? '<button class="btn big" data-action="again">Новая игра</button>' : ''}
+          </div>`;
+          break;
+        }
         body = `<div class="p-screen center">
           <div class="big-emoji pop">${v.place === 1 ? '🏆' : v.place === 2 ? '🥈' : v.place === 3 ? '🥉' : '🎉'}</div>
           <h2>${v.place}-е место</h2>
