@@ -7,7 +7,7 @@
   const banner = $('#banner');
   const { esc, plural } = PB;
 
-  const MIN_PLAYERS = 3;
+  const MIN_PLAYERS = 2;
   const MAX_PLAYERS = 8;
   const ROUNDS = 2;
   const T = { answer: 90, vote: 20, finalAnswer: 75, finalVote: 30 };
@@ -292,7 +292,9 @@
     showMatchup();
   }
 
-  const votersFor = (m) => S.players.filter((p) => !m.authors.includes(p.id));
+  // Вдвоём голосовать некому — тогда голосуют сами авторы, честно (можно и за соперника)
+  const selfVote = () => S.players.length < 3;
+  const votersFor = (m) => (selfVote() ? S.players.slice() : S.players.filter((p) => !m.authors.includes(p.id)));
 
   function showMatchup() {
     const m = S.matchups[S.current];
@@ -318,12 +320,12 @@
   function onVote(p, msg) {
     if (S.phase === 'vote') {
       const m = S.matchups[S.current];
-      if (m.authors.includes(p.id) || p.id in m.votes) return;
+      if ((m.authors.includes(p.id) && !selfVote()) || p.id in m.votes) return;
       if (!m.authors.includes(msg.choice) || m.answers[msg.choice] == null) return;
       m.votes[p.id] = msg.choice;
     } else if (S.phase === 'final-vote') {
       const f = S.final;
-      if (p.id in f.votes || msg.choice === p.id || !f.order.includes(msg.choice)) return;
+      if (p.id in f.votes || (msg.choice === p.id && !selfVote()) || !f.order.includes(msg.choice)) return;
       f.votes[p.id] = msg.choice;
     } else {
       return;
@@ -400,7 +402,7 @@
     syncAll();
   }
 
-  const finalVoters = () => S.players.filter((p) => S.final.order.some((id) => id !== p.id));
+  const finalVoters = () => (selfVote() ? S.players.slice() : S.players.filter((p) => S.final.order.some((id) => id !== p.id)));
 
   function startFinalVote() {
     const f = S.final;
@@ -494,11 +496,11 @@
       }
       case 'vote': {
         const m = S.matchups[S.current];
-        if (m.authors.includes(p.id)) return wait('Это ваш вопрос! 🙏', 'Остальные голосуют. Держите лицо.');
+        if (m.authors.includes(p.id) && !selfVote()) return wait('Это ваш вопрос! 🙏', 'Остальные голосуют. Держите лицо.');
         if (p.id in m.votes) return wait('Голос принят 👍', 'Смотрите на экран.');
         const options = m.authors.filter((a) => m.answers[a] != null).map((a) => ({ id: a, text: m.answers[a] }));
         if (options.length < 2) return wait('Без боя', 'Один из игроков не ответил.');
-        return { screen: 'vote', key: 'vote:' + S.round + ':' + S.current, prompt: m.prompt, options, time: timeLeft() };
+        return { screen: 'vote', key: 'vote:' + S.round + ':' + S.current, prompt: m.prompt, options: shuffle(options), time: timeLeft(), honest: selfVote() };
       }
       case 'reveal':
         return wait('Смотрите на экран! 👀', '');
@@ -512,9 +514,9 @@
       case 'final-vote': {
         const f = S.final;
         if (p.id in f.votes) return wait('Голос принят 👍', 'Смотрите на экран.');
-        const options = f.order.filter((id) => id !== p.id).map((id) => ({ id, text: f.answers[id] }));
+        const options = f.order.filter((id) => selfVote() || id !== p.id).map((id) => ({ id, text: f.answers[id] }));
         if (!options.length) return wait('Ждём…', 'Другие голосуют.');
-        return { screen: 'vote', key: 'final-vote', prompt: f.prompt, options, time: timeLeft(), final: true };
+        return { screen: 'vote', key: 'final-vote', prompt: f.prompt, options, time: timeLeft(), final: true, honest: selfVote() };
       }
       case 'final-reveal':
         return wait('Итоги финала… 🥁', 'Смотрите на экран!');
@@ -583,7 +585,7 @@
               <button class="btn big" data-action="start" id="startBtn">Начать игру</button>
               <label class="toggle"><input type="checkbox" data-action="tts" ${tts ? 'checked' : ''}> Озвучка вопросов</label>
             </div>
-            <p class="hint">Нужно от ${MIN_PLAYERS} до ${MAX_PLAYERS} игроков. Первый вошедший — VIP: он тоже может запустить игру с телефона. Нажмите на игрока, чтобы выгнать.</p>
+            <p class="hint">Нужно от ${MIN_PLAYERS} до ${MAX_PLAYERS} игроков (вдвоём голосуете сами — честно!). Первый вошедший — VIP: он тоже может запустить игру с телефона. Нажмите на игрока, чтобы выгнать.</p>
           </div>
         </div>
       </div>`;

@@ -260,6 +260,7 @@
         body = `<div class="p-screen">
           <div class="p-row"><span class="muted">${v.final ? 'Какой ответ лучший?' : 'Что смешнее?'}</span>${timerHtml()}</div>
           <div class="p-prompt small">${esc(v.prompt)}</div>
+          ${v.honest ? '<p class="honest">Вас двое — голосуйте честно, можно и за соперника 😇</p>' : ''}
           <div class="options">${v.options
             .map((o, i) => `<button class="option pop" style="animation-delay:${i * 0.06}s" data-action="vote" data-id="${esc(o.id)}">${esc(o.text)}</button>`)
             .join('')}</div>
@@ -339,7 +340,8 @@
 
   // ---------- старт ----------
   const sess = loadSession();
-  if (sess && sess.code && sess.name) {
+  const urlRoom = PB.normalizeCode(new URLSearchParams(location.search).get('room'));
+  if (sess && sess.code && sess.name && (!urlRoom || urlRoom === sess.code)) {
     code = sess.code;
     name = sess.name;
     showConnecting();
